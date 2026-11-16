@@ -1,8 +1,8 @@
 # pi-interactive-subagents
 
-Async subagents for [pi](https://github.com/badlogic/pi-mono), running in tmux panes. Spawn a sub-agent, keep working in the main session, and get the result steered back when it finishes. Fully non-blocking.
+Async subagents for [pi](https://github.com/badlogic/pi-mono), running in Rex tabs or tmux panes. Spawn a sub-agent, keep working in the main session, and get the result steered back when it finishes. Fully non-blocking.
 
-**tmux-only fork.** See [Acknowledgements](#acknowledgements) for the upstream project, which also supports cmux, zellij, and WezTerm.
+**Rex + tmux fork** of [amosblomqvist/pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents). Inside Rex (`$REX_SESSION` and `$REX_BLOCK` set), each sub-agent opens in its own Rex tab, named after it, without taking focus, and the tab closes when the sub-agent finishes. Anywhere else, it falls back to tmux panes as described below. The Rex layer is `pi-extension/subagents/rex.ts`; `tmux.ts` routes to it. See [Acknowledgements](#acknowledgements) for the upstream project, which also supports cmux, zellij, and WezTerm.
 
 ## How it works
 
@@ -178,11 +178,13 @@ Status display is configured via `config.json` in the extension directory (copy 
 ## Requirements
 
 - [pi](https://github.com/badlogic/pi-mono)
-- [tmux](https://github.com/tmux/tmux)
+- Rex or [tmux](https://github.com/tmux/tmux)
 
 ```bash
-tmux new -A -s pi 'pi'
+tmux new -A -s pi 'pi'   # tmux only; in Rex, start pi in any terminal
 ```
+
+The Rex surface tests run against a throwaway Rex session: `node --test test/integration/rex-surface.test.ts`.
 
 ## Acknowledgements
 
