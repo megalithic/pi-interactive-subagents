@@ -6,11 +6,8 @@
  * Every command is scoped to the parent's session (`$REX_SESSION`): Rex only
  * resolves a block id inside its session.
  */
-import { execFile, execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 
 let rexBinary: string | null | undefined;
 
@@ -86,17 +83,49 @@ function lastLines(text: string, lines: number): string {
   return text.split("\n").slice(-(Math.max(1, lines) + 50)).join("\n");
 }
 
-export function readScreen(surface: string, lines = 50): string {
-  return lastLines(rex(["capture", "-b", surface, "--trim"]), lines);
-}
+/** Rex keeps up to ~64 MiB of scrollback and `capture` has no line limit. */
+const CAPTURE_MAX_BUFFER = 256 * 1024 * 1024;
 
-export async function readScreenAsync(surface: string, lines = 50): Promise<string> {
-  const { stdout } = await execFileAsync(
+/** Bytes of capture output the polling read keeps: far more than 250 lines. */
+const CAPTURE_TAIL_BYTES = 512 * 1024;
+
+/** One-off read (the summary fallback at exit): buffer it all, keep the tail. */
+export function readScreen(surface: string, lines = 50): string {
+  const output = execFileSync(
     rexBin() ?? "rex",
     ["-s", process.env.REX_SESSION!, "capture", "-b", surface, "--trim"],
-    { encoding: "utf8" },
+    { encoding: "utf8", maxBuffer: CAPTURE_MAX_BUFFER },
   );
-  return lastLines(stdout, lines);
+  return lastLines(output, lines);
+}
+
+/**
+ * The exit poll reads every second, so it streams the capture and keeps only
+ * its tail: a verbose subagent's scrollback must neither overflow a buffer
+ * nor be held whole in memory.
+ */
+export function readScreenAsync(surface: string, lines = 50): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      rexBin() ?? "rex",
+      ["-s", process.env.REX_SESSION!, "capture", "-b", surface, "--trim"],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let tail = Buffer.alloc(0);
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      tail = Buffer.concat([tail, chunk]);
+      if (tail.length > CAPTURE_TAIL_BYTES) tail = tail.subarray(tail.length - CAPTURE_TAIL_BYTES);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(lastLines(tail.toString("utf8"), lines));
+      else reject(new Error(`rex capture failed (${code}): ${stderr.trim()}`));
+    });
+  });
 }
 
 /** Close the block; its tab closes with it. */
